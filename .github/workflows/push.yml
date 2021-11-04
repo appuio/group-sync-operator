@@ -95,15 +95,6 @@ jobs:
         run: make
         shell: bash
 
-      - name: build bundle
-        shell: bash
-        run: |
-          make bundle IMG=quay.io/${QUAY_REGISTRY}:${OPERATOR_IMAGE_TAG} VERSION=${BUNDLE_VERSION} DEFAULT_CHANNEL=alpha
-
-      - name: verify bundle
-        shell: bash
-        run: operator-sdk bundle validate ./bundle --select-optional name=operatorhub
-
       - name: build chart
         shell: bash
         run: make helmchart VERSION=${BUNDLE_VERSION} IMG=quay.io/${QUAY_REGISTRY}:${OPERATOR_IMAGE_TAG}
@@ -131,29 +122,6 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/ppc64le
           push: true
           tags: "quay.io/${{ env.QUAY_REGISTRY }}:latest,quay.io/${{ env.QUAY_REGISTRY }}:${{ env.OPERATOR_IMAGE_TAG }}"
-
-      - name: Verify bundle after csv update
-        shell: bash
-        run: operator-sdk bundle validate ./bundle --select-optional name=operatorhub
-
-      - name: "Build and Push Bundle Image"
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          file: ./bundle.Dockerfile
-          platforms: linux/amd64,linux/arm64,linux/ppc64le
-          push: true
-          tags: "quay.io/${{ env.QUAY_REGISTRY }}-bundle:latest,quay.io/${{ env.QUAY_REGISTRY }}-bundle:${{ env.BUNDLE_IMAGE_TAG }}"
-
-      - name: "Verify bundle image"
-        shell: bash
-        run: operator-sdk bundle validate quay.io/${QUAY_REGISTRY}-bundle:${BUNDLE_IMAGE_TAG} --select-optional name=operatorhub
-
-      - name: process bundle for disconnected support
-        uses: redhat-cop/github-actions/disconnected-csv@master
-        with:
-          CSV_FILE: bundle/manifests/${{ env.REPOSITORY_NAME }}.clusterserviceversion.yaml
-          TAGS_TO_DIGESTS: ${OPERATOR_IMAGE_TAG}
 
   release-github:
     name: GitHub Release
