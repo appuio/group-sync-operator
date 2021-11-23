@@ -33,6 +33,13 @@ var (
 		},
 		[]string{METRICS_PROVIDER_LABEL, METRICS_CR_NAMESPACE_LABEL, METRICS_CR_NAME_LABEL})
 
+	groupsDeleted = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "group_sync_groups_deleted",
+			Help: "Number of Groups Deleted",
+		},
+		[]string{METRICS_PROVIDER_LABEL, METRICS_CR_NAMESPACE_LABEL, METRICS_CR_NAME_LABEL})
+
 	nextScheduledSynchronization = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "group_sync_next_scheduled_sync",

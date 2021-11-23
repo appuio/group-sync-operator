@@ -31,6 +31,7 @@ import (
 	"github.com/robfig/cron"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclock "k8s.io/apimachinery/pkg/util/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -100,7 +101,9 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 		prometheusLabels := prometheus.Labels{METRICS_CR_NAMESPACE_LABEL: instance.GetNamespace(), METRICS_CR_NAME_LABEL: instance.GetName(), METRICS_PROVIDER_LABEL: groupSyncer.GetProviderName()}
 
 		// Provider Label
-		providerLabel := fmt.Sprintf("%s_%s", instance.Name, groupSyncer.GetProviderName())
+		providerLabel := fmt.Sprintf("%s_%s_%s", instance.Namespace, instance.Name, groupSyncer.GetProviderName())
+
+		syncTimestampAnnotation := clock.Now().Format(time.RFC3339Nano)
 
 		// Initialize Connection
 		if err := groupSyncer.Bind(); err != nil {
@@ -160,7 +163,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 			ocpGroup.Labels[constants.SyncProvider] = providerLabel
 
 			// Add Gloabl Annotations/Labels
-			ocpGroup.Annotations[constants.SyncTimestamp] = ISO8601(time.Now())
+			ocpGroup.Annotations[constants.SyncTimestamp] = syncTimestampAnnotation
 
 			ocpGroup.Users = group.Users
 			err = r.CreateOrUpdateResource(context, nil, "", ocpGroup)
@@ -174,12 +177,40 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 
 		}
 
-		logger.Info("Sync Completed Successfully", "Provider", groupSyncer.GetProviderName(), "Groups Created or Updated", updatedGroups)
+		deletedGroups := 0
+		if instance.Spec.DeleteDisappearedGroups {
+			groupsByProvider := &userv1.GroupList{}
+			err = r.GetClient().List(context, groupsByProvider, &client.ListOptions{
+				LabelSelector: labels.SelectorFromSet(map[string]string{
+					constants.SyncProvider: providerLabel,
+				}),
+			})
+			if err != nil {
+				log.Error(err, "Failed to list groups for deletion")
+				return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
+			}
+			for _, group := range groupsByProvider.Items {
+				if group.Annotations[constants.SyncTimestamp] == syncTimestampAnnotation {
+					continue
+				}
+
+				err := r.GetClient().Delete(context, &group)
+				if err != nil {
+					log.Error(err, "Failed to Create or Update OpenShift Group")
+					return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
+				}
+
+				deletedGroups++
+			}
+		}
+
+		logger.Info("Sync Completed Successfully", "Provider", groupSyncer.GetProviderName(), "Groups Created or Updated", updatedGroups, "Groups Deleted", deletedGroups)
 
 		// Add Metrics
 
 		successfulGroupSyncs.With(prometheusLabels).Inc()
 		groupsSynchronized.With(prometheusLabels).Set(float64(updatedGroups))
+		groupsDeleted.With(prometheusLabels).Add(float64(deletedGroups))
 		groupSyncError.With(prometheusLabels).Set(0)
 
 	}
@@ -213,17 +244,6 @@ func (r *GroupSyncReconciler) wrapMetricsErrorWithMetrics(prometheusLabels prome
 	groupSyncError.With(prometheusLabels).Set(1)
 
 	return r.ManageError(context, obj, issue)
-}
-
-func ISO8601(t time.Time) string {
-	var tz string
-	if zone, offset := t.Zone(); zone == "UTC" {
-		tz = "Z"
-	} else {
-		tz = fmt.Sprintf("%03d00", offset/3600)
-	}
-	return fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d%s",
-		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), tz)
 }
 
 func mergeMap(m1, m2 map[string]string) map[string]string {
