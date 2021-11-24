@@ -104,8 +104,6 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 		providerLabel := fmt.Sprintf("%s_%s", instance.Name, groupSyncer.GetProviderName())
 		providerNamespaceLabel := instance.Namespace
 
-		syncTimestampAnnotation := clock.Now().Format(time.RFC3339)
-
 		// Initialize Connection
 		if err := groupSyncer.Bind(); err != nil {
 			return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
@@ -165,7 +163,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 			ocpGroup.Labels[constants.SyncProviderNamespace] = providerNamespaceLabel
 
 			// Add Gloabl Annotations/Labels
-			ocpGroup.Annotations[constants.SyncTimestamp] = syncTimestampAnnotation
+			ocpGroup.Annotations[constants.SyncTimestamp] = clock.Now().Format(time.RFC3339)
 
 			ocpGroup.Users = group.Users
 			err = r.CreateOrUpdateResource(context, nil, "", ocpGroup)
