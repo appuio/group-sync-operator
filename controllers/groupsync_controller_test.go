@@ -43,7 +43,7 @@ var _ = Describe("GroupSyncController controller", func() {
 	BeforeEach(func() {
 		ctx := context.Background()
 
-		By("By having pre-existing openshift groups")
+		By("having pre-existing openshift groups")
 		ocpGroup := &userv1.Group{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: preexistingGroup,
@@ -61,10 +61,10 @@ var _ = Describe("GroupSyncController controller", func() {
 		k8sClient.DeleteAllOf(ctx, &userv1.Group{})
 	})
 
-	It("It should sync groups from the provider", func() {
+	It("should sync groups from the provider", func() {
 		ctx := context.Background()
 
-		By("By creating a sync config")
+		By("creating a sync config")
 		syncConfig := &redhatcopv1alpha1.GroupSync{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "sync-groups",
@@ -88,17 +88,19 @@ var _ = Describe("GroupSyncController controller", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, syncConfig)).Should(Succeed())
-		By("By checking for synced groups in cluster")
+		By("checking for synced groups in cluster")
+		Eventually(assertGroup(ctx, preexistingGroup), "10s", "250ms").Should(Succeed())
 		Eventually(assertGroup(ctx, "staff"), "10s", "250ms").Should(Succeed())
 		Eventually(assertGroup(ctx, "developers"), "10s", "250ms").Should(Succeed())
 
-		By("By deleting group")
+		By("deleting group")
 		syncConfig = &redhatcopv1alpha1.GroupSync{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "sync-groups"}, syncConfig)).Should(Succeed())
 		syncConfig.Spec.Providers[0].Static.Groups = syncConfig.Spec.Providers[0].Static.Groups[0:1]
 		Expect(k8sClient.Update(ctx, syncConfig)).Should(Succeed())
 
-		By("By checking for deleted group in cluster")
+		By("checking for deleted group in cluster")
+		Eventually(assertGroup(ctx, preexistingGroup), "10s", "250ms").Should(Succeed())
 		Eventually(assertGroup(ctx, "staff"), "10s", "250ms").Should(Succeed())
 		Eventually(assertGroupNotFound(ctx, "developers"), "10s", "250ms").Should(Succeed())
 	})
