@@ -19,7 +19,6 @@ metadata:
   labels:
     operatorframework.io/arch.amd64: supported
     operatorframework.io/arch.arm64: supported
-    operatorframework.io/arch.ppc64le: supported
     operatorframework.io/os.linux: supported
   name: group-sync-operator.v0.0.1
   namespace: placeholder

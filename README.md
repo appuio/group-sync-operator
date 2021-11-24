@@ -526,7 +526,7 @@ If you want to utilize the Operator Lifecycle Manager (OLM) to install this oper
 |:-:|:-:|
 | amd64  | ✅ |
 | arm64  | ✅  |
-| ppc64le  | ✅  |
+| ppc64le  | ❌   |
 | s390x  | ❌  |
 
 #### Deploying from OperatorHub UI
