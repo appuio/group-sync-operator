@@ -198,7 +198,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 			for _, group := range deletedGroups {
 				err := r.GetClient().Delete(context, &group)
 				if err != nil {
-					log.Error(err, "Failed to Create or Update OpenShift Group")
+					log.Error(err, "Failed to Delete OpenShift Group")
 					return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
 				}
 			}
