@@ -101,7 +101,8 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 		prometheusLabels := prometheus.Labels{METRICS_CR_NAMESPACE_LABEL: instance.GetNamespace(), METRICS_CR_NAME_LABEL: instance.GetName(), METRICS_PROVIDER_LABEL: groupSyncer.GetProviderName()}
 
 		// Provider Label
-		providerLabel := fmt.Sprintf("%s_%s_%s", instance.Namespace, instance.Name, groupSyncer.GetProviderName())
+		providerLabel := fmt.Sprintf("%s_%s", instance.Name, groupSyncer.GetProviderName())
+		providerNamespaceLabel := instance.Namespace
 
 		syncTimestampAnnotation := clock.Now().Format(time.RFC3339Nano)
 
@@ -161,6 +162,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 
 			// Add Label for new resource
 			ocpGroup.Labels[constants.SyncProvider] = providerLabel
+			ocpGroup.Labels[constants.SyncProviderNamespace] = providerNamespaceLabel
 
 			// Add Gloabl Annotations/Labels
 			ocpGroup.Annotations[constants.SyncTimestamp] = syncTimestampAnnotation
@@ -182,7 +184,8 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 			groupsByProvider := &userv1.GroupList{}
 			err = r.GetClient().List(context, groupsByProvider, &client.ListOptions{
 				LabelSelector: labels.SelectorFromSet(map[string]string{
-					constants.SyncProvider: providerLabel,
+					constants.SyncProvider:          providerLabel,
+					constants.SyncProviderNamespace: providerNamespaceLabel,
 				}),
 			})
 			if err != nil {
