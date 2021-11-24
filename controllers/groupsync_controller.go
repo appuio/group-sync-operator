@@ -104,7 +104,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 		providerLabel := fmt.Sprintf("%s_%s", instance.Name, groupSyncer.GetProviderName())
 		providerNamespaceLabel := instance.Namespace
 
-		syncTimestampAnnotation := clock.Now().Format(time.RFC3339Nano)
+		syncTimestampAnnotation := clock.Now().Format(time.RFC3339)
 
 		// Initialize Connection
 		if err := groupSyncer.Bind(); err != nil {
@@ -179,7 +179,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 
 		}
 
-		deletedGroups := 0
+		deletedGroupsCount := 0
 		if instance.Spec.DeleteDisappearedGroups {
 			groupsByProvider := &userv1.GroupList{}
 			err = r.GetClient().List(context, groupsByProvider, &client.ListOptions{
@@ -192,28 +192,25 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 				log.Error(err, "Failed to list groups for deletion")
 				return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
 			}
-			for _, group := range groupsByProvider.Items {
-				if group.Annotations[constants.SyncTimestamp] == syncTimestampAnnotation {
-					continue
-				}
 
+			deletedGroups := findDeletedGroups(groupsByProvider.Items, groups)
+			deletedGroupsCount = len(deletedGroups)
+			for _, group := range deletedGroups {
 				err := r.GetClient().Delete(context, &group)
 				if err != nil {
 					log.Error(err, "Failed to Create or Update OpenShift Group")
 					return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
 				}
-
-				deletedGroups++
 			}
 		}
 
-		logger.Info("Sync Completed Successfully", "Provider", groupSyncer.GetProviderName(), "Groups Created or Updated", updatedGroups, "Groups Deleted", deletedGroups)
+		logger.Info("Sync Completed Successfully", "Provider", groupSyncer.GetProviderName(), "Groups Created or Updated", updatedGroups, "Groups Deleted", deletedGroupsCount)
 
 		// Add Metrics
 
 		successfulGroupSyncs.With(prometheusLabels).Inc()
 		groupsSynchronized.With(prometheusLabels).Set(float64(updatedGroups))
-		groupsDeleted.With(prometheusLabels).Add(float64(deletedGroups))
+		groupsDeleted.With(prometheusLabels).Add(float64(deletedGroupsCount))
 		groupSyncError.With(prometheusLabels).Set(0)
 
 	}
@@ -247,6 +244,21 @@ func (r *GroupSyncReconciler) wrapMetricsErrorWithMetrics(prometheusLabels prome
 	groupSyncError.With(prometheusLabels).Set(1)
 
 	return r.ManageError(context, obj, issue)
+}
+
+// findDeletedGroups returns the Groups in `a` that aren't in `b`.
+func findDeletedGroups(a []userv1.Group, b []userv1.Group) []userv1.Group {
+	names := make(map[string]struct{}, len(b))
+	for _, g := range b {
+		names[g.Name] = struct{}{}
+	}
+	var deleted []userv1.Group
+	for _, g := range a {
+		if _, found := names[g.Name]; !found {
+			deleted = append(deleted, g)
+		}
+	}
+	return deleted
 }
 
 func mergeMap(m1, m2 map[string]string) map[string]string {
