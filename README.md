@@ -452,6 +452,30 @@ The secret can be created by executing the following command:
 oc create secret generic okta-api-token --from-literal=okta-api-token=<OKTA_API_TOKEN> -n group-sync-operator
 ```
 
+### Static
+
+Sync static groups defined in the provider into OpenShift. The following table describes the set of configuration options for the Static provider:
+
+| Name | Description | Defaults | Required |
+| ----- | ---------- | -------- | ----- |
+| `groups` | List of groups to sync into OpenShift | `[]`  | No |
+
+The following is an example of a minimal configuration that can be applied to integrate with a Static provider:
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: GroupSync
+metadata:
+  name: static-sync
+spec:
+  providers:
+    - name: static
+      static:
+        groups:
+          - name: developers
+            users: [xerxes.xoe, mermes.moe]
+```
+
 ### Support for Additional Metadata (Beta)
 
 Additional metadata based on Keycloak group are also added to the OpenShift groups as Annotations including:
@@ -509,6 +533,23 @@ spec:
 ```
 
 If a schedule is not provided, synchronization will occur only when the object is reconciled by the platform.
+
+## Delete Disappeared Groups
+
+Groups disappeared from the source can be deleted.
+
+The deletion is provider scoped through the `group-sync-operator.redhat-cop.io/sync-provider` label.
+
+```yaml
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: GroupSync
+metadata:
+  name: keycloak-groupsync
+spec:
+  deleteDisappearedGroups: true
+  providers:
+  - ...
+```
 
 ## Deploying the Operator
 

@@ -44,6 +44,12 @@ type GroupSyncSpec struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Providers"
 	Providers []Provider `json:"providers,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name" protobuf:"bytes,1,rep,name=providers"`
 
+	// DeleteDisappearedGroups controls if disappeared groups should be removed.
+	// The deletion of groups is provider scoped.
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="DeleteDisappearedGroups controls if disappeared groups should be removed"
+	// +kubebuilder:validation:Optional
+	DeleteDisappearedGroups bool `json:"deleteDisappearedGroups"`
+
 	// Schedule represents a cron based configuration for synchronization
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Schedule",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	// +kubebuilder:validation:Optional
@@ -135,6 +141,11 @@ type ProviderType struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Okta Provider"
 	// +kubebuilder:validation:Optional
 	Okta *OktaProvider `json:"okta,omitempty"`
+
+	// Static represents the Static provider
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Static Provider"
+	// +kubebuilder:validation:Optional
+	Static *StaticProvider `json:"static,omitempty"`
 }
 
 // KeycloakProvider represents integration with Keycloak
@@ -397,6 +408,29 @@ type OktaProvider struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Group Limit",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:number"}
 	// +kubebuilder:validation:Optional
 	GroupLimit int `json:"groupLimit"`
+}
+
+// StaticProvider allow statically setting Groups
+// +k8s:openapi-gen=true
+type StaticProvider struct {
+	// Groups represents a list of groups to synchronize
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Groups to Synchronize",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	// +kubebuilder:validation:Optional
+	Groups []StaticProviderGroup `json:"groups,omitempty"`
+}
+
+// StaticProvider allow statically setting Groups
+// +k8s:openapi-gen=true
+type StaticProviderGroup struct {
+	// Name represents the name of the group
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Name of the group",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Users represents a list of users to apply to the synchronized group.
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Users represents a list of users to apply to the synchronized group",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	// +kubebuilder:validation:Optional
+	Users []string `json:"users,omitempty"`
 }
 
 // SecretRef represents a reference to an item within a Secret

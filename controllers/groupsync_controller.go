@@ -31,6 +31,7 @@ import (
 	"github.com/robfig/cron"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclock "k8s.io/apimachinery/pkg/util/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -101,6 +102,7 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 
 		// Provider Label
 		providerLabel := fmt.Sprintf("%s_%s", instance.Name, groupSyncer.GetProviderName())
+		providerNamespaceLabel := instance.Namespace
 
 		// Initialize Connection
 		if err := groupSyncer.Bind(); err != nil {
@@ -158,9 +160,10 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 
 			// Add Label for new resource
 			ocpGroup.Labels[constants.SyncProvider] = providerLabel
+			ocpGroup.Labels[constants.SyncProviderNamespace] = providerNamespaceLabel
 
 			// Add Gloabl Annotations/Labels
-			ocpGroup.Annotations[constants.SyncTimestamp] = ISO8601(time.Now())
+			ocpGroup.Annotations[constants.SyncTimestamp] = clock.Now().Format(time.RFC3339)
 
 			ocpGroup.Users = group.Users
 			err = r.CreateOrUpdateResource(context, nil, "", ocpGroup)
@@ -174,12 +177,38 @@ func (r *GroupSyncReconciler) Reconcile(context context.Context, req ctrl.Reques
 
 		}
 
-		logger.Info("Sync Completed Successfully", "Provider", groupSyncer.GetProviderName(), "Groups Created or Updated", updatedGroups)
+		deletedGroupsCount := 0
+		if instance.Spec.DeleteDisappearedGroups {
+			groupsByProvider := &userv1.GroupList{}
+			err = r.GetClient().List(context, groupsByProvider, &client.ListOptions{
+				LabelSelector: labels.SelectorFromSet(map[string]string{
+					constants.SyncProvider:          providerLabel,
+					constants.SyncProviderNamespace: providerNamespaceLabel,
+				}),
+			})
+			if err != nil {
+				log.Error(err, "Failed to list groups for deletion")
+				return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
+			}
+
+			deletedGroups := findDeletedGroups(groupsByProvider.Items, groups)
+			deletedGroupsCount = len(deletedGroups)
+			for _, group := range deletedGroups {
+				err := r.GetClient().Delete(context, &group)
+				if err != nil {
+					log.Error(err, "Failed to Delete OpenShift Group")
+					return r.wrapMetricsErrorWithMetrics(prometheusLabels, context, instance, err)
+				}
+			}
+		}
+
+		logger.Info("Sync Completed Successfully", "Provider", groupSyncer.GetProviderName(), "Groups Created or Updated", updatedGroups, "Groups Deleted", deletedGroupsCount)
 
 		// Add Metrics
 
 		successfulGroupSyncs.With(prometheusLabels).Inc()
 		groupsSynchronized.With(prometheusLabels).Set(float64(updatedGroups))
+		groupsDeleted.With(prometheusLabels).Add(float64(deletedGroupsCount))
 		groupSyncError.With(prometheusLabels).Set(0)
 
 	}
@@ -215,15 +244,19 @@ func (r *GroupSyncReconciler) wrapMetricsErrorWithMetrics(prometheusLabels prome
 	return r.ManageError(context, obj, issue)
 }
 
-func ISO8601(t time.Time) string {
-	var tz string
-	if zone, offset := t.Zone(); zone == "UTC" {
-		tz = "Z"
-	} else {
-		tz = fmt.Sprintf("%03d00", offset/3600)
+// findDeletedGroups returns the Groups in `a` that aren't in `b`.
+func findDeletedGroups(a []userv1.Group, b []userv1.Group) []userv1.Group {
+	names := make(map[string]struct{}, len(b))
+	for _, g := range b {
+		names[g.Name] = struct{}{}
 	}
-	return fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d%s",
-		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), tz)
+	var deleted []userv1.Group
+	for _, g := range a {
+		if _, found := names[g.Name]; !found {
+			deleted = append(deleted, g)
+		}
+	}
+	return deleted
 }
 
 func mergeMap(m1, m2 map[string]string) map[string]string {
