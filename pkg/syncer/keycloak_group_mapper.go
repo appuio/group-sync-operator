@@ -15,18 +15,22 @@ import (
 type KeycloakGroupMapper struct {
 	GetGroupMembers func(groupID string) ([]*gocloak.User, error)
 
-	AllowedGroups         []string
-	Scope                 redhatcopv1alpha1.SyncScope
-	SubGroupProcessing    redhatcopv1alpha1.SubGroupProcessing
-	SubGroupJoinSeparator string
+	AllowedGroups               []string
+	Scope                       redhatcopv1alpha1.SyncScope
+	SubGroupProcessing          redhatcopv1alpha1.SubGroupProcessing
+	SubGroupJoinSeparator       string
+	SubGroupJoinStripRootGroups []string
 
 	cachedGroups       map[string]*gocloak.Group
 	cachedGroupMembers map[string][]*gocloak.User
+
+	stripRootSet map[string]struct{}
 }
 
 func (k *KeycloakGroupMapper) Map(groups []*gocloak.Group) ([]userv1.Group, error) {
 	k.cachedGroups = make(map[string]*gocloak.Group)
 	k.cachedGroupMembers = make(map[string][]*gocloak.User)
+	k.stripRootSet = stringSet(k.SubGroupJoinStripRootGroups)
 
 	for _, group := range groups {
 
@@ -95,6 +99,9 @@ func (k *KeycloakGroupMapper) Map(groups []*gocloak.Group) ([]userv1.Group, erro
 			ocpGroup.Users = append(ocpGroup.Users, *user.Username)
 		}
 
+		if *cachedGroup.Name == "" {
+			continue
+		}
 		ocpGroups = append(ocpGroups, ocpGroup)
 
 	}
@@ -120,9 +127,15 @@ func (k *KeycloakGroupMapper) processGroupsAndMembers(group, parentGroup *gocloa
 		return errGroupNameContainsSeparator
 	}
 
-	if parentGroup != nil && redhatcopv1alpha1.JoinSubGroupProcessing == k.SubGroupProcessing {
-		name := *parentGroup.Name + subGroupJoinSeparator + *group.Name
-		group.Name = &name
+	if redhatcopv1alpha1.JoinSubGroupProcessing == k.SubGroupProcessing {
+		if parentGroup == nil {
+			if _, strip := k.stripRootSet[*group.Name]; strip {
+				group.Name = gocloak.StringP("")
+			}
+		} else if parentGroup != nil && *parentGroup.Name != "" {
+			name := *parentGroup.Name + subGroupJoinSeparator + *group.Name
+			group.Name = &name
+		}
 	}
 
 	k.cachedGroups[*group.ID] = group
@@ -173,4 +186,12 @@ func (k *KeycloakGroupMapper) singleDiff(lhsSlice, rhsSlice []*gocloak.User) (lh
 	}
 
 	return lhsOnly
+}
+
+func stringSet(v []string) map[string]struct{} {
+	r := make(map[string]struct{})
+	for _, s := range v {
+		r[s] = struct{}{}
+	}
+	return r
 }

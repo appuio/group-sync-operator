@@ -203,6 +203,11 @@ type KeycloakProvider struct {
 	// +kubebuilder:validation:Optional
 	SubGroupJoinSeparator string `json:"subGroupJoinSeparator,omitempty"`
 
+	// SubGroupJoinStripGroups controls whether to strip the root groups given by name.
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Controls whether to strip the root groups given by name."
+	// +kubebuilder:validation:Optional
+	SubGroupJoinStripRootGroups []string `json:"subGroupJoinStripRootGroups,omitempty"`
+
 	// URL is the location of the Keycloak server
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keycloak URL",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	// +kubebuilder:validation:Required

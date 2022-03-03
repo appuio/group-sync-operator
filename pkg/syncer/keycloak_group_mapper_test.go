@@ -13,30 +13,11 @@ import (
 	. "github.com/redhat-cop/group-sync-operator/pkg/syncer"
 )
 
-var groupHierarchy = []*gocloak.Group{
-	newKeycloakGroup("top-level-1",
-		newKeycloakGroup("child-1",
-			newKeycloakGroup("deeply-nested-1"))),
-	newKeycloakGroup("top-level-2",
-		newKeycloakGroup("child-1"), newKeycloakGroup("child-2")),
-}
-
-var groupHierarchyUsers = map[string][]*gocloak.User{
-	*groupHierarchy[0].ID: {newKeycloakUser("top-level-1.user")},
-	*groupHierarchy[1].ID: {newKeycloakUser("top-level-2.user")},
-
-	*groupHierarchy[0].SubGroups[0].ID:              {newKeycloakUser("top-level-1.child-1.user")},
-	*groupHierarchy[0].SubGroups[0].SubGroups[0].ID: {newKeycloakUser("top-level-1.child-1.deeply-nested-1.user")},
-
-	*groupHierarchy[1].SubGroups[0].ID: {newKeycloakUser("top-level-2.child-1.user")},
-	*groupHierarchy[1].SubGroups[1].ID: {newKeycloakUser("top-level-2.child-2.user")},
-}
-
 func Test_KeycloakGroupMapper_Map_ScopeOne(t *testing.T) {
-	groups := groupHierarchy
+	groups, users := groupHierarchy()
 
 	mapper := KeycloakGroupMapper{
-		GetGroupMembers: getGroupMembersFunc(groupHierarchyUsers),
+		GetGroupMembers: getGroupMembersFunc(users),
 
 		Scope: redhatcopv1alpha1.OneSyncScope,
 	}
@@ -50,10 +31,10 @@ func Test_KeycloakGroupMapper_Map_ScopeOne(t *testing.T) {
 }
 
 func Test_KeycloakGroupMapper_Map_ScopeSub(t *testing.T) {
-	groups := groupHierarchy
+	groups, users := groupHierarchy()
 
 	mapper := KeycloakGroupMapper{
-		GetGroupMembers: getGroupMembersFunc(groupHierarchyUsers),
+		GetGroupMembers: getGroupMembersFunc(users),
 
 		Scope: redhatcopv1alpha1.SubSyncScope,
 	}
@@ -73,10 +54,10 @@ func Test_KeycloakGroupMapper_Map_ScopeSub(t *testing.T) {
 }
 
 func Test_KeycloakGroupMapper_Map_ScopeSub_JoinSubGroupProcessing(t *testing.T) {
-	groups := groupHierarchy
+	groups, users := groupHierarchy()
 
 	mapper := KeycloakGroupMapper{
-		GetGroupMembers: getGroupMembersFunc(groupHierarchyUsers),
+		GetGroupMembers: getGroupMembersFunc(users),
 
 		Scope:                 redhatcopv1alpha1.SubSyncScope,
 		SubGroupProcessing:    redhatcopv1alpha1.JoinSubGroupProcessing,
@@ -92,6 +73,54 @@ func Test_KeycloakGroupMapper_Map_ScopeSub_JoinSubGroupProcessing(t *testing.T) 
 		{"top-level-2", []string{"top-level-2.user"}},
 		{"top-level-2:child-1", []string{"top-level-2.child-1.user"}},
 		{"top-level-2:child-2", []string{"top-level-2.child-2.user"}},
+	})
+}
+
+func Test_KeycloakGroupMapper_Map_ScopeSub_JoinSubGroupProcessing_FilterAndStripRoot(t *testing.T) {
+	groups, _ := groupHierarchy()
+
+	mapper := KeycloakGroupMapper{
+		GetGroupMembers: noopGetGroupMembersFunc,
+
+		SubGroupJoinStripRootGroups: []string{"top-level-1"},
+		AllowedGroups:               []string{"top-level-1"},
+		Scope:                       redhatcopv1alpha1.SubSyncScope,
+		SubGroupProcessing:          redhatcopv1alpha1.JoinSubGroupProcessing,
+		SubGroupJoinSeparator:       ":",
+	}
+
+	mapped, err := mapper.Map(groups)
+	require.NoError(t, err)
+	require.ElementsMatch(t, groupNames(mapped), []string{
+		"child-1",
+		"child-1:deeply-nested-1",
+	})
+}
+
+func Test_KeycloakGroupMapper_Map_ScopeSub_JoinSubGroupProcessing_StripRoot_NotStripSub(t *testing.T) {
+	// Sub groups with the same name should not be stripped
+	groups := []*gocloak.Group{
+		newKeycloakGroup("top",
+			newKeycloakGroup("my-org",
+				newKeycloakGroup("top",
+					newKeycloakGroup("team")))),
+	}
+
+	mapper := KeycloakGroupMapper{
+		GetGroupMembers: noopGetGroupMembersFunc,
+
+		SubGroupJoinStripRootGroups: []string{"top"},
+		Scope:                       redhatcopv1alpha1.SubSyncScope,
+		SubGroupProcessing:          redhatcopv1alpha1.JoinSubGroupProcessing,
+		SubGroupJoinSeparator:       ":",
+	}
+
+	mapped, err := mapper.Map(groups)
+	require.NoError(t, err)
+	require.ElementsMatch(t, groupNames(mapped), []string{
+		"my-org",
+		"my-org:top",
+		"my-org:top:team",
 	})
 }
 
@@ -160,4 +189,25 @@ func groupMembers(groups []userv1.Group) []groupMember {
 		out[i].Usernames = users
 	}
 	return out
+}
+
+func groupHierarchy() ([]*gocloak.Group, map[string][]*gocloak.User) {
+	h := []*gocloak.Group{
+		newKeycloakGroup("top-level-1",
+			newKeycloakGroup("child-1",
+				newKeycloakGroup("deeply-nested-1"))),
+		newKeycloakGroup("top-level-2",
+			newKeycloakGroup("child-1"), newKeycloakGroup("child-2")),
+	}
+	u := map[string][]*gocloak.User{
+		*h[0].ID: {newKeycloakUser("top-level-1.user")},
+		*h[1].ID: {newKeycloakUser("top-level-2.user")},
+
+		*h[0].SubGroups[0].ID:              {newKeycloakUser("top-level-1.child-1.user")},
+		*h[0].SubGroups[0].SubGroups[0].ID: {newKeycloakUser("top-level-1.child-1.deeply-nested-1.user")},
+
+		*h[1].SubGroups[0].ID: {newKeycloakUser("top-level-2.child-1.user")},
+		*h[1].SubGroups[1].ID: {newKeycloakUser("top-level-2.child-2.user")},
+	}
+	return h, u
 }
