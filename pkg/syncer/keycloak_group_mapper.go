@@ -35,7 +35,10 @@ func (k *KeycloakGroupMapper) Map(groups []*gocloak.Group) ([]userv1.Group, erro
 	for _, group := range groups {
 
 		if _, groupFound := k.cachedGroups[*group.ID]; !groupFound {
-			k.processGroupsAndMembers(group, nil, k.Scope, k.SubGroupProcessing, k.SubGroupJoinSeparator)
+			err := k.processGroupsAndMembers(group, nil, k.Scope, k.SubGroupProcessing, k.SubGroupJoinSeparator)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -158,7 +161,10 @@ func (k *KeycloakGroupMapper) processGroupsAndMembers(group, parentGroup *gocloa
 	if redhatcopv1alpha1.SubSyncScope == scope {
 		for _, subGroup := range group.SubGroups {
 			if _, subGroupFound := k.cachedGroups[*subGroup.ID]; !subGroupFound {
-				k.processGroupsAndMembers(subGroup, group, scope, subGroupProcessing, subGroupJoinSeparator)
+				err := k.processGroupsAndMembers(subGroup, group, scope, subGroupProcessing, subGroupJoinSeparator)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
